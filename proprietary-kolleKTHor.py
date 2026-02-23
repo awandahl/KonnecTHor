@@ -133,7 +133,6 @@ def diva_pubtype_category(diva_type: str) -> str | None:
     if t == "book":
         return "book"
     if t == "chapter":
-":
         return "chapter"
     if t == "review":
         return "article"
