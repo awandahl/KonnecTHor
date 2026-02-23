@@ -647,6 +647,12 @@ def main():
                     if wos_uid:
                         df_work.at[idx, "ISI"] = wos_uid
 
+                # Optional: Scopus EID enrichment
+                if not scopus and SCOPUS_LOOKUP_FROM_VERIFIED_DOI:
+                    eid = lookup_scopus_eid_by_doi(best_verified_doi)
+                    if eid:
+                        df_work.at[idx, "ScopusId"] = eid
+
             elif best_possible_doi:
                 df_work.at[idx, "Possible DOI:s"] = best_possible_doi
                 df_work.at[idx, "Verified DOI"] = ""
