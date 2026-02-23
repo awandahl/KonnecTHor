@@ -4,11 +4,12 @@ import requests
 import pandas as pd
 from tqdm import tqdm  # pip install tqdm
 from urllib.parse import quote
+from datetime import datetime
 
 # -------------------- CONFIG --------------------
 
-FROM_YEAR = 1999
-TO_YEAR = 1999
+FROM_YEAR = 1992
+TO_YEAR = 1992
 
 # which DiVA portal to use: e.g. "kth", "uu", "umu", "lnu", etc.
 DIVA_PORTAL = "kth"
@@ -33,10 +34,14 @@ VERIFY_USE_PAGES = True      # start+end as a pair
 VERIFY_USE_ISSN = True       # any ISSN match
 VERIFY_USE_AUTHORS = True    # require at least one overlapping surname
 
-RANGE_PREFIX = f"{FROM_YEAR}-{TO_YEAR}_"
-DOWNLOADED_CSV = RANGE_PREFIX + "diva_raw.csv"
-OUTPUT_CSV = RANGE_PREFIX + "doi_candidates.csv"
-EXCEL_OUT = RANGE_PREFIX + "doi_candidates_links.xlsx"
+# Filenames: portal + year range (+ timestamp for outputs)
+TIMESTAMP = datetime.now().strftime("%Y%m%d-%H%M%S")
+PREFIX = f"{DIVA_PORTAL}_{FROM_YEAR}-{TO_YEAR}"
+
+DOWNLOADED_CSV = f"{PREFIX}_diva_raw.csv"                 # input snapshot
+OUTPUT_CSV = f"{PREFIX}_doi_candidates_{TIMESTAMP}.csv"   # output with timestamp
+EXCEL_OUT = f"{PREFIX}_doi_candidates_links_{TIMESTAMP}.xlsx"
+
 
 # -------------------- HELPERS --------------------
 
