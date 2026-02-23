@@ -24,7 +24,7 @@ The tool uses title, year, publication type, bibliographic metadata (volume/issu
     - Uses token‑based Jaccard similarity with a configurable threshold (`SIM_THRESHOLD`, default 0.9).
     - Maps DiVA `PublicationType` and Crossref `type` into coarse categories (article, conference, book, chapter) and **rejects mismatches**.
 - **Verification using bibliographic metadata and authors**
-For each promising DOI candidate from Crossref, KonnecTHor optionally checks:
+For each promising DOI candidate from Crossref, kolleKTHor optionally checks:
     - Volume (`VERIFY_USE_VOLUME`)
     - Issue (`VERIFY_USE_ISSUE`)
     - Start/end pages (`VERIFY_USE_PAGES`)
@@ -43,7 +43,7 @@ A candidate becomes a **Verified DOI** only if all enabled checks that have data
     - `Verified DOI`: strong match (title, type, year, and all enabled verification checks).
     - `Possible DOI:s`: good title/type match, but one or more verification checks missing or not fully convincing.
 - **Rich outputs with links**
-For each year range, KonnecTHor produces:
+For each year range, kolleKTHor produces:
     - `{FROM}-{TO}_diva_raw.csv` – raw DiVA export for that slice.
     - `{FROM}-{TO}_doi_candidates.csv` – all records with either a verified or possible DOI.
     - `{FROM}-{TO}_doi_candidates_links.xlsx` – same rows, with clickable URLs for:
@@ -56,8 +56,8 @@ For each year range, KonnecTHor produces:
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/konnecthor.git
-cd konnecthor
+git clone https://github.com/your-org/kollekthor.git
+cd kollekthor
 pip install -r requirements.txt
 ```
 
@@ -112,10 +112,10 @@ Open the script and set:
     - `FROM_YEAR` and `TO_YEAR` for the publication years of interest.
     - Identifier selection flags (`NO_ID_ONLY`, `SCOPUS_ONLY`, `ISI_ONLY`, `BOTH_TYPES`).
     - Verification toggles as needed.
-2. **Run KonnecTHor**
+2. **Run kolleKTHor**
 
 ```bash
-python konnecthor.py
+python kolleKTHor.py
 ```
 
 3. **Review output**
