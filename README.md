@@ -1,8 +1,8 @@
 
 
-# KonnecTHor
+# kolleor
 
-KonnecTHor is a command‑line tool for enriching DiVA publication records with missing DOIs by matching against Crossref. It is designed to work for any DiVA portal (KTH, UU, UmU, Lnu, etc.) and to be run in year‑based batches.
+kolleKTHor is a command‑line tool for enriching DiVA publication records with missing DOIs by matching against Crossref. It is designed to work for any DiVA portal (KTH, UU, UmU, Lnu, etc.) and to be run in year‑based batches.
 
 The tool uses title, year, publication type, bibliographic metadata (volume/issue/pages, ISSN) and, when available, overlapping author surnames to identify high‑confidence DOI matches.
 
@@ -75,7 +75,7 @@ All configuration is in the script header:
 FROM_YEAR = 1999
 TO_YEAR = 1999
 
-DIVA_PORTAL = "kth"   # e.g. "kth", "uu", "umu", "lnu"
+DIVA_PORTAL = ""   # e.g. "", "uu", "umu", "lnu"
 
 SCOPUS_ONLY = False
 ISI_ONLY = False
