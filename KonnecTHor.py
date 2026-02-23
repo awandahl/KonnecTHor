@@ -7,8 +7,8 @@ from urllib.parse import quote
 
 # -------------------- CONFIG --------------------
 
-FROM_YEAR = 1900
-TO_YEAR = 1995
+FROM_YEAR = 1999
+TO_YEAR = 1999
 
 # which DiVA portal to use: e.g. "kth", "uu", "umu", "lnu", etc.
 DIVA_PORTAL = "kth"
@@ -24,13 +24,14 @@ NO_ID_ONLY = True     # records with no DOI, no ISI, no Scopus
 SIM_THRESHOLD = 0.9
 MAX_ACCEPTED = 9999
 CROSSREF_ROWS_PER_QUERY = 5
-MAILTO = "email@domain.com"  # Your email address
+MAILTO = "aw@kth.se"  # Your email address
 
 # Verification toggles
 VERIFY_USE_VOLUME = True
 VERIFY_USE_ISSUE = True
 VERIFY_USE_PAGES = True      # start+end as a pair
 VERIFY_USE_ISSN = True       # any ISSN match
+VERIFY_USE_AUTHORS = True    # require at least one overlapping surname
 
 RANGE_PREFIX = f"{FROM_YEAR}-{TO_YEAR}_"
 DOWNLOADED_CSV = RANGE_PREFIX + "diva_raw.csv"
@@ -59,7 +60,7 @@ def build_diva_url(from_year: int, to_year: int) -> str:
         "fl": (
             "PID,ArticleId,DOI,EndPage,ISBN,ISBN_ELECTRONIC,ISBN_PRINT,ISBN_UNDEFINED,"
             "ISI,Issue,Journal,JournalEISSN,JournalISSN,Pages,PublicationType,PMID,"
-            "ScopusId,SeriesEISSN,SeriesISSN,StartPage,Title,Volume,Year"
+            "ScopusId,SeriesEISSN,SeriesISSN,StartPage,Title,Name,Volume,Year"
         ),
     }
     encoded = [f"{k}={quote(v, safe='')}" for k, v in params.items()]
@@ -125,9 +126,9 @@ def diva_pubtype_category(diva_type: str) -> str | None:
     if t == "chapter":
         return "chapter"
     if t == "review":
-        return "article"     # treat journal reviews as articles
+        return "article"
     if t == "bookreview":
-        return "article"     # book reviews are journal items
+        return "article"
     return None
 
 def crossref_type_category(cr_type: str | None) -> str | None:
@@ -145,6 +146,68 @@ def crossref_type_category(cr_type: str | None) -> str | None:
     if t in {"journal-review", "peer-review"}:
         return "article"
     return None
+
+# ---- Author helpers ----
+
+def extract_diva_author_names(raw: str) -> list[str]:
+    """
+    From a DiVA Name field like:
+    'Aleksanyan, Hayk [u1lv4ls8] (KTH [...]);Shahgholian, Henrik [u15h3xoo] (KTH [...])'
+    return ['Aleksanyan, Hayk', 'Shahgholian, Henrik'].
+    """
+    if not raw:
+        return []
+
+    authors = []
+    for part in raw.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        # Cut off affiliation part: everything from first ' (' onwards
+        part = re.split(r"\s\(", part, maxsplit=1)[0]
+        # Remove [u1lv4ls8]-style ids
+        part = re.sub(r"\[[^\]]*\]", "", part).strip()
+        part = re.sub(r"\s+", " ", part)
+        if part:
+            authors.append(part)
+    return authors
+
+def extract_diva_authors(row) -> set[str]:
+    """
+    Return set of family names from DiVA Name column,
+    assuming 'Family, Given' format.
+    """
+    raw = (row.get("Name", "") or "").strip()
+    names = extract_diva_author_names(raw)
+    surnames = set()
+    for n in names:
+        fam = n.split(",", 1)[0].strip().lower()
+        if fam:
+            surnames.add(fam)
+    return surnames
+
+def extract_crossref_authors(metadata: dict) -> set[str]:
+    authors = metadata.get("author") or []
+    names = set()
+    for a in authors:
+        fam = (a.get("family") or "").strip().lower()
+        if fam:
+            names.add(fam)
+    return names
+
+def authors_match(diva_row, metadata: dict) -> bool:
+    diva_auth = extract_diva_authors(diva_row)
+    cr_auth = extract_crossref_authors(metadata)
+
+    if not diva_auth or not cr_auth:
+        print("        ⚠ Missing authors on one side; skipping author check")
+        return False
+
+    inter = diva_auth & cr_auth
+    print(f"        DiVA authors: {sorted(diva_auth)}")
+    print(f"        Crossref authors: {sorted(cr_auth)}")
+    print(f"        Author intersection: {sorted(inter)}")
+    return bool(inter)
 
 # ---- Crossref detail helpers ----
 
@@ -249,7 +312,7 @@ def bibliographic_match(diva_row, crossref_biblio: dict) -> bool:
 
     return all(check[1] for check in active_checks)
 
-# ---- Crossref search (now with type) ----
+# ---- Crossref search (with type) ----
 
 def search_crossref_title(title: str, year: int | None = None, max_results: int = 5):
     params = {
@@ -469,6 +532,7 @@ def main():
 
                 issn_ok = True
                 biblio_ok = True
+                author_ok = True
 
                 if VERIFY_USE_ISSN:
                     issn_ok = issn_match(row, crossref_biblio)
@@ -476,8 +540,11 @@ def main():
                 if VERIFY_USE_VOLUME or VERIFY_USE_ISSUE or VERIFY_USE_PAGES:
                     biblio_ok = bibliographic_match(row, crossref_biblio)
 
-                if issn_ok and biblio_ok:
-                    print("      ✓✓✓ VERIFIED match (according to current flags)")
+                if VERIFY_USE_AUTHORS:
+                    author_ok = authors_match(row, full_metadata)
+
+                if issn_ok and biblio_ok and (not VERIFY_USE_AUTHORS or author_ok):
+                    print("      ✓✓✓ VERIFIED match (all required checks passed)")
                     if sim > best_verified_score:
                         best_verified_score = sim
                         best_verified_doi = doi
@@ -545,6 +612,7 @@ def main():
         "ISBN_UNDEFINED",
         "ArticleId",
         "PMID",
+        "Name",
     ]
     csv_col_order = [c for c in csv_col_order if c in df_out.columns]
     remaining = [c for c in df_out.columns if c not in csv_col_order]
@@ -593,6 +661,7 @@ def main():
         "ISBN_UNDEFINED",
         "ArticleId",
         "PMID",
+        "Name",
     ]
     excel_col_order = [c for c in excel_col_order if c in df_links.columns]
     remaining = [c for c in df_links.columns if c not in excel_col_order]
