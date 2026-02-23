@@ -149,7 +149,7 @@ After each run you get, for that portal and year slice:
 Typical workflow for a new DiVA library:
 
 1. Run a **test slice** (e.g. 1–2 years) and inspect the Excel file to see if:
-    - Publication types line up correctly (e.g. `article`, `conferencePaper` etc. really mean the same as at KTH).
+    - Publication types line up correctly (e.g. `article`, `conferencePaper` etc. really mean the same as in DiVA).
     - The verification checks (volume/issue/pages/ISSN) are not too strict for that portal’s data quality.
 2. If needed, adjust:
     - `SIM_THRESHOLD` if titles are consistently slightly off (e.g. 0.85 instead of 0.9).
