@@ -5,6 +5,8 @@ import pandas as pd
 from tqdm import tqdm  # pip install tqdm
 from urllib.parse import quote
 from datetime import datetime
+import json
+import requests
 
 # -------------------- CONFIG --------------------
 
@@ -155,6 +157,40 @@ def crossref_type_category(cr_type: str | None) -> str | None:
     if t in {"journal-review", "peer-review"}:
         return "article"
     return None
+
+# ---- WoS helpers ----
+
+def lookup_wos_uid_by_doi(doi: str) -> str:
+    """
+    Return Web of Science UID (e.g. 'WOS:000361033900013') for a given DOI,
+    using the WoS Starter API. Returns '' if nothing is found or on error.
+    """
+    if not doi or not WOS_API_KEY or not WOS_LOOKUP_FROM_VERIFIED_DOI:
+        return ""
+
+    params = {
+        "db": "WOS",
+        "q": f"DO={doi}",
+        "limit": 1,
+        "page": 1,
+    }
+    headers = {
+        "accept": "application/json",
+        "X-ApiKey": WOS_API_KEY,
+    }
+    try:
+        r = requests.get(WOS_BASE_URL, headers=headers, params=params, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        hits = data.get("hits") or []
+        if hits:
+            uid = hits[0].get("uid") or ""
+            if uid:
+                print(f"      WoS UID for DOI {doi}: {uid}")
+                return uid
+    except Exception as e:
+        print(f"      ERROR looking up WoS UID for DOI {doi}: {e}")
+    return ""
 
 # ---- Author helpers ----
 
@@ -569,6 +605,11 @@ def main():
                     f"  ✓✓✓ ACCEPT VERIFIED DOI={best_verified_doi} "
                     f"(sim={best_verified_score:.3f}, year={best_year_verified})"
                 )
+            if WOS_LOOKUP_FROM_VERIFIED_DOI:
+                wos_uid = lookup_wos_uid_by_doi(best_verified_doi)
+                if wos_uid:
+                    df_work.at[idx, "ISI"] = wos_uid
+
             elif best_possible_doi:
                 df_work.at[idx, "Possible DOI:s"] = best_possible_doi
                 df_work.at[idx, "Verified DOI"] = ""
