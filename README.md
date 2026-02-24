@@ -1,170 +1,283 @@
 
 
+***
+
 # kolleKTHor
 
-kolleKTHor is a command‑line tool for enriching DiVA publication records with missing DOIs by matching against Crossref. It is designed to work for any DiVA portal (KTH, UU, UmU, Lnu, etc.) and to be run in year‑based batches.
+**kolleKTHor** är ett kommandoradsverktyg som kompletterar DiVA-poster med saknade DOI:er genom att matcha mot Crossref. När en DOI har verifierats kan verktyget även (valfritt) hämta:
 
-The tool uses title, year, publication type, bibliographic metadata (volume/issue/pages, ISSN) and, when available, overlapping author surnames to identify high‑confidence DOI matches.
+- Web of Science‑ID (ISI)
+- Scopus EID
+- PubMed‑ID (PMID)
 
-## Features
+Verktyget fungerar mot valfri DiVA-portal (t.ex. `kth`, `uu`, `umu`, `lnu`) och körs normalt på ett år i taget eller korta årintervall.
 
-- **DiVA integration**
-    - Connects to any DiVA portal’s `/smash/export.jsf` endpoint.
-    - Filters on publication year (`FROM_YEAR`–`TO_YEAR`).
-    - Restricts to selected publication types via `publicationTypeCode` (article, chapter, conference paper, book, review, book review).
-    - Exports a configurable set of fields, including `Name` for authors.
-- **Flexible identifier selection**
-    - Processes only records that match your chosen identifier pattern:
-        - `NO_ID_ONLY = True`: no DOI, no ISI, no ScopusId.
-        - `SCOPUS_ONLY = True`: ScopusId only.
-        - `ISI_ONLY = True`: ISI only.
-        - `BOTH_TYPES = True`: Scopus‑only or ISI‑only.
-- **Title and publication‑type aware Crossref search**
-    - Queries Crossref by title and publication year.
-    - Uses token‑based Jaccard similarity with a configurable threshold (`SIM_THRESHOLD`, default 0.9).
-    - Maps DiVA `PublicationType` and Crossref `type` into coarse categories (article, conference, book, chapter) and **rejects mismatches**.
-- **Verification using bibliographic metadata and authors**
-For each promising DOI candidate from Crossref, kolleKTHor optionally checks:
-    - Volume (`VERIFY_USE_VOLUME`)
-    - Issue (`VERIFY_USE_ISSUE`)
-    - Start/end pages (`VERIFY_USE_PAGES`)
-    - ISSNs (`VERIFY_USE_ISSN`)
-    - Author surnames (`VERIFY_USE_AUTHORS`)
+## Huvudidé
 
-A candidate becomes a **Verified DOI** only if all enabled checks that have data pass:
-    - ISSN and volume/issue/pages must match (where present).
-    - If `VERIFY_USE_AUTHORS = True`, there must be at least one overlapping surname between DiVA and Crossref.
-- **Author parsing from DiVA**
-    - Reads the DiVA `Name` column, which contains authors in the form:
-`Family, Given [local-id] (affiliations…);Next, Author [...]`
-    - Extracts clean display names (`Family, Given`) for reference work.
-    - Derives author surnames (family names) for matching against `author[].family` from Crossref.
-- **Two DOI outcome levels**
-    - `Verified DOI`: strong match (title, type, year, and all enabled verification checks).
-    - `Possible DOI:s`: good title/type match, but one or more verification checks missing or not fully convincing.
-- **Rich outputs with links**
-For each year range, kolleKTHor produces:
-    - `{FROM}-{TO}_diva_raw.csv` – raw DiVA export for that slice.
-    - `{FROM}-{TO}_doi_candidates.csv` – all records with either a verified or possible DOI.
-    - `{FROM}-{TO}_doi_candidates_links.xlsx` – same rows, with clickable URLs for:
-        - DiVA record (PID)
-        - Possible / Verified DOI
-        - ISI (Web of Science)
-        - ScopusId
+1. Hämta publikationer från DiVA via export‑API:et för ett givet årintervall.
+2. Filtrera fram poster utan DOI (och ev. utan ISI/Scopus, beroende på inställningar).
+3. Söka motsvarande poster i Crossref via titel + år.
+4. Säkerställa träffar med:
+    - publikationstyp (artikel, konferens, bok, kapitel)
+    - volym, nummer, sidor
+    - ISSN
+    - efternamn på författare
+5. För **verifierade** DOI:er:
+    - Sätta kolumnen `Verified DOI`
+    - Ev. föreslå `Possible DOI:s` om träffen är bra men inte fullt verifierad
+    - Valfritt hämta ISI (WoS), Scopus EID, och PMID
 
+***
+
+## Funktioner
+
+- Automatisk nedladdning av DiVA‑export som CSV
+- Stöd för flera DiVA‑portaler via `DIVA_PORTAL`
+- Matchning mot Crossref med justerbar titelsimilaritet
+- Kontroll av:
+    - volym, nummer, start-/slutsida
+    - ISSN (journal/serie, tryckt/elektronisk)
+    - minst ett överlappande författarefternamn
+- Valfri berikning:
+    - Web of Science‑ID (ISI) via DOI
+    - Scopus‑ID (EID) via DOI
+    - PubMed‑ID (PMID) via DOI
+- Utdata i både CSV och Excel med klickbara länkar till:
+    - DiVA‑post
+    - DOI
+    - Web of Science
+    - Scopus
+
+***
 
 ## Installation
 
+1. Klona eller ladda ner projektet:
 ```bash
-git clone https://github.com/your-org/kollekthor.git
-cd kollekthor
-pip install -r requirements.txt
+git clone https://github.com/<användare>/<repo>.git
+cd <repo>
 ```
 
-Requirements (typical):
+2. Installera beroenden (exempel):
+```bash
+pip install requests pandas tqdm xlsxwriter
+```
 
-- Python 3.9+
-- `requests`, `pandas`, `tqdm`, `xlsxwriter`
+Du behöver Python 3.9 eller senare.
 
+***
 
-## Configuration
+## Konfiguration
 
-All configuration is in the script header:
+All konfiguration ligger högst upp i skriptet (t.ex. `kolleKTHor.py`).
+
+### Grundinställningar
 
 ```python
-FROM_YEAR = 1999
-TO_YEAR = 1999
+FROM_YEAR = 2025
+TO_YEAR = 2025
 
-DIVA_PORTAL = ""   # e.g. "", "uu", "umu", "lnu"
+DIVA_PORTAL = "kth"  # t.ex. "kth", "uu", "umu", "lnu"
+MAILTO = "email@domain.com"  # Crossref kontaktadress
+```
 
+- `FROM_YEAR` / `TO_YEAR` anger vilket/vilka år som ska bearbetas.
+- `DIVA_PORTAL` styr vilken DiVA‑instans som används (subdomänen innan `.diva-portal.org`).
+
+
+### Val av vilka poster som ska bearbetas
+
+```python
 SCOPUS_ONLY = False
 ISI_ONLY = False
-BOTH_TYPES = False
-NO_ID_ONLY = True
-
-SIM_THRESHOLD = 0.9
-MAX_ACCEPTED = 9999
-CROSSREF_ROWS_PER_QUERY = 5
-MAILTO = "your.email@example.org"
-
-VERIFY_USE_VOLUME = True
-VERIFY_USE_ISSUE = True
-VERIFY_USE_PAGES = True
-VERIFY_USE_ISSN = True
-VERIFY_USE_AUTHORS = True
+BOTH_TYPES = False    # Scopus-only ELLER ISI-only (utan DOI)
+NO_ID_ONLY = True     # poster utan DOI, utan ISI, utan Scopus
 ```
 
-Change `DIVA_PORTAL` to target another DiVA library (e.g. `"uu"` for Uppsala). Adjust `FROM_YEAR`/`TO_YEAR` to define the publication year slice to process.
+Exempel:
 
-If you do not want to use authors as a verification criterion, set:
+- Endast poster utan några identifierare:
+`NO_ID_ONLY = True`, övriga `False`.
+- Endast Scopus‑endast (utan DOI och ISI):
+`SCOPUS_ONLY = True`, övriga `False`.
+- Endast ISI‑endast:
+`ISI_ONLY = True`, övriga `False`.
+- Scopus‑eller‑ISI‑endast:
+`BOTH_TYPES = True`, övriga `False`.
+
+
+### Matchning mot Crossref
 
 ```python
-VERIFY_USE_AUTHORS = False
+SIM_THRESHOLD = 0.9           # minsta titelsimilaritet (0–1)
+MAX_ACCEPTED = 9999           # max antal accepterade träffar innan scriptet stannar
+CROSSREF_ROWS_PER_QUERY = 5   # hur många kandidater vi hämtar per titel
 ```
 
+Högre `SIM_THRESHOLD` ger färre men säkrare träffar.
 
-## Usage
+### Verifieringsflaggor
 
-1. **Edit configuration**
+```python
+VERIFY_USE_VOLUME = True
+VERIFY_USE_ISSUE = True
+VERIFY_USE_PAGES = True      # start+end som par
+VERIFY_USE_ISSN = True       # kräver match på något ISSN
+VERIFY_USE_AUTHORS = True    # kräver minst ett gemensamt efternamn
+```
 
-Open the script and set:
-    - `DIVA_PORTAL` to the desired portal code.
-    - `FROM_YEAR` and `TO_YEAR` for the publication years of interest.
-    - Identifier selection flags (`NO_ID_ONLY`, `SCOPUS_ONLY`, `ISI_ONLY`, `BOTH_TYPES`).
-    - Verification toggles as needed.
-    
-2. **Run kolleKTHor**
+- Stäng av en parameter (sätt till `False`) om din DiVA‑data är svag på det området, t.ex. sidor.
 
+
+### Proprietära databaser (WoS, Scopus)
+
+Högst upp styr du om kommersiella API:er ska användas eller inte:
+
+```python
+USE_PROPRIETARY_WOS = True
+USE_PROPRIETARY_SCOPUS = True
+```
+
+Dessa flaggor kopplas sedan till mer specifika inställningar:
+
+```python
+WOS_LOOKUP_FROM_VERIFIED_DOI = USE_PROPRIETARY_WOS
+SCOPUS_LOOKUP_FROM_VERIFIED_DOI = USE_PROPRIETARY_SCOPUS
+```
+
+API‑nycklar:
+
+```python
+WOS_API_KEY = "*****"      # Clarivate Web of Science Starter API
+SCOPUS_API_KEY = "*****"   # Elsevier / Scopus API
+```
+
+- Sätt `USE_PROPRIETARY_WOS = False` om du inte får/kan använda Web of Science.
+- Sätt `USE_PROPRIETARY_SCOPUS = False` om du inte får/kan använda Scopus.
+- När dessa är `False` görs inga anrop till respektive API, även om nycklarna finns kvar i filen.
+
+
+### PubMed (alltid öppen)
+
+```python
+NCBI_TOOL = "kolleKTHor"
+NCBI_EMAIL = "email@domain.com"
+PUBMED_LOOKUP_FROM_VERIFIED_DOI = True
+```
+
+- `NCBI_TOOL` är ett namn för din klient (utan mellanslag).
+- `NCBI_EMAIL` bör vara en giltig e‑postadress enligt NCBI:s rekommendationer.
+- Om `PUBMED_LOOKUP_FROM_VERIFIED_DOI = True` försöker skriptet hämta PMID för varje verifierad DOI (om DiVA‑posten saknar PMID).
+
+
+### Filnamn
+
+Filerna namnges enligt:
+
+```python
+TIMESTAMP = datetime.now().strftime("%Y%m%d-%H%M%S")
+PREFIX = f"{DIVA_PORTAL}_{FROM_YEAR}-{TO_YEAR}"
+
+DOWNLOADED_CSV = f"{PREFIX}_diva_raw.csv"
+OUTPUT_CSV = f"{PREFIX}_doi_candidates_{TIMESTAMP}.csv"
+EXCEL_OUT = f"{PREFIX}_doi_candidates_links_{TIMESTAMP}.xlsx"
+```
+
+Exempel för KTH och år 2025 med tidsstämpel `20260224-111530`:
+
+- `kth_2025-2025_diva_raw.csv`
+- `kth_2025-2025_doi_candidates_20260224-111530.csv`
+- `kth_2025-2025_doi_candidates_links_20260224-111530.xlsx`
+
+***
+
+## Hur skriptet arbetar (översikt)
+
+1. Bygger en DiVA‑URL med årfilter och publikationstyper.
+2. Laddar ner CSV‑filen (`*_diva_raw.csv`).
+3. Filtrerar rader enligt:
+    - årintervall
+    - titel ej tom
+    - typ (artiklar, kapitel, konferensbidrag, böcker, recensioner)
+    - vald identifierarkombination (NO_ID_ONLY, SCOPUS_ONLY, ISI_ONLY, BOTH_TYPES).
+4. För varje rad:
+    - Hämtar upp till `CROSSREF_ROWS_PER_QUERY` kandidater från Crossref via titel + år.
+    - Beräknar titelsimilaritet (tokenbaserad).
+    - Kollar publikationstyp (artikel/konferens/bok/kapitel).
+    - För kandidat(er) över tröskeln:
+        - Hämtar full metadata från Crossref.
+        - Jämför volym, nummer, sidor.
+        - Jämför ISSN.
+        - Jämför efternamn (minst ett gemensamt).
+5. Om en kandidat klarar alla aktiva kontroller:
+    - Markeras som **Verified DOI**.
+    - Andra bra kandidater kan hamna i `Possible DOI:s`.
+6. För varje **Verified DOI**:
+    - Om WoS‑flagga är på: försök hämta ISI och fyll i `ISI` (endast numerisk del, utan `WOS:`).
+    - Om Scopus‑flagga är på: försök hämta `ScopusId` (EID).
+    - Om PubMed‑flaggan är på: försök hämta `PMID`.
+
+***
+
+## Utdata
+
+Efter körning skapas:
+
+1. **CSV med kandidater**
+
+`*_doi_candidates_<TIMESTAMP>.csv` innehåller alla rader där antingen:
+    - `Verified DOI` inte är tom, eller
+    - `Possible DOI:s` inte är tom.
+
+Kolumner inkluderar bl.a.:
+    - `PID`, `DOI`, `Verified DOI`, `Possible DOI:s`
+    - `ISI`, `ScopusId`
+    - `Title`, `Year`, `PublicationType`
+    - `Journal`, `Volume`, `Issue`, `StartPage`, `EndPage`, `JournalISSN`, `SeriesISSN`
+    - `PMID`
+    - `Name` (författare)
+2. **Excel med klickbara länkar**
+
+`*_doi_candidates_links_<TIMESTAMP>.xlsx` innehåller samma rader som CSV plus länkkolumner:
+    - `PID_link` – DiVA‑posten
+    - `Possible_DOI_link` – länk till DOI
+    - `Verified_DOI_link` – länk till DOI
+    - `ISI_link` – länk till Web of Science (om ISI finns)
+    - `Scopus_link` – länk till Scopus (om ScopusId finns)
+
+Länkarna skrivs som klickbara celler (t.ex. texten “PID”, “Verified DOI”) i Excel-arket.
+
+***
+
+## Exempel på körning
+
+1. Öppna `kolleKTHor.py` och ställ in:
+    - `DIVA_PORTAL = "kth"`
+    - `FROM_YEAR = 2025`, `TO_YEAR = 2025`
+    - `NO_ID_ONLY = True` (t.ex. bara poster utan DOI/ISI/Scopus)
+    - `USE_PROPRIETARY_WOS = False` och `USE_PROPRIETARY_SCOPUS = False`
+(för en “öppen” körning utan kommersiella API:er)
+2. Kör skriptet:
 ```bash
 python kolleKTHor.py
 ```
 
-3. **Review output**
-    - Inspect `{FROM}-{TO}_doi_candidates.csv` and the corresponding Excel file.
-    - Use the link columns to quickly check DiVA, Crossref, Scopus, and Web of Science.
-    - Decide which `Verified DOI` and `Possible DOI:s` to feed back into DiVA (manually or via an import process).
-
-### Typical workflows
-
-- **Backfill a historical period**
-Run in slices (e.g. 1990–1994, 1995–1999) with `NO_ID_ONLY = True` to find DOIs for older records that lack any identifiers.
-- **Clean up Scopus‑only / ISI‑only records**
-Set `NO_ID_ONLY = False` and enable `SCOPUS_ONLY`, `ISI_ONLY`, or `BOTH_TYPES` to turn existing Scopus/ISI‑only records into DOI‑identified records.
-- **Deploy for another DiVA institution**
-    - Change `DIVA_PORTAL`.
-    - Test on a small year range to confirm that publication types, year parsing, and identifier patterns look correct.
-    - Adjust verification toggles if volume/issue/pages or ISSN data are less reliable in that portal.
-
-
-## Limitations
-
-- Relies on DiVA’s export API and Crossref’s metadata; incomplete or inconsistent data on either side may prevent verification.
-- Author matching uses only surnames and assumes DiVA `Name` follows the `Family, Given` convention.
-- Very old publications and non‑journal items may lack enough structured metadata for full verification.
+3. Granska resultat:
+    - Öppna CSV‑filen i valfri editor för att se verifierade och möjliga DOI:er.
+    - Öppna Excel‑filen för att klicka på länkar:
+        - DiVA‑post (för manuell kontroll)
+        - DOI‑länkar (Crossref/förlag)
+        - Ev. WoS/Scopus (om proprietära flaggor är på och API:erna används)
+    - Uppdatera sedan DiVA (manuellt eller via annat importflöde) med de DOI, ISI, ScopusId och PMID du bedömer som korrekta.
 
 ***
-## License
 
-This project is licensed under the MIT License.
+## Tips och begränsningar
 
-Copyright (c) 2025 Anders Wändahl
+- Titelsimilaritet och metadata kan vara bristfälliga, särskilt för äldre publikationer.
+- Författarmatchningen använder endast efternamn, vilket kan ge både falska positiva och falska negativa i vissa fall.
+- WoS- och Scopus‑API:erna kräver giltiga licenser och API‑nycklar.
+- NCBI (PubMed) rekommenderar att du använder en stabil e‑postadress i `NCBI_EMAIL` och inte överbelastar deras API (skriptet väntar redan lite mellan anropen).
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
+***
 
