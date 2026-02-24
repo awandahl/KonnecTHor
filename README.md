@@ -10,7 +10,7 @@
 - Scopus EID
 - PubMed‑ID (PMID)
 
-Verktyget fungerar mot valfri DiVA-portal (t.ex. `kth`, `uu`, `umu`, `lnu`) och körs normalt på ett år i taget eller korta årintervall.
+Verktyget fungerar mot valfri DiVA-portal (t.ex. `kth`, `uu`, `umu`, `lnu`) och körs normalt på ett år i taget eller korta årsintervall.
 
 ## Huvudidé
 
